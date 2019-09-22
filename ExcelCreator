@@ -1,0 +1,214 @@
+using OfficeOpenXml;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+
+namespace ExcelCreator
+{
+    class Program
+    {
+        private const string worksheetName = "итог18_225_приход";
+        private const int MinValue = 1;
+        private static int maxValue;
+        private static List<NamedRange> columns = new List<NamedRange>
+        {
+            new NamedRange("5 руб", 0, 600000000),
+            new NamedRange("10 руб", 0, 1000000000),
+            new NamedRange("50 руб", 0, 600000000),
+            new NamedRange("100 руб", 0, 1500000000),
+            new NamedRange("500 руб", 0, 2000000000),
+            new NamedRange("1000 руб", 0, 2100000000),
+            new NamedRange("5000 руб", 0, 750000000),
+            new NamedRange("1 коп", 0, 50),
+            new NamedRange("5 коп", 0, 700),
+            new NamedRange("10 коп", 0, 20000),
+            new NamedRange("50 коп", 0, 250000),
+            new NamedRange("1 руб", 0, 1800000),
+            new NamedRange("2 руб", 0, 1700000),
+            new NamedRange("5 руб", 0, 23000000),
+            new NamedRange("10 руб", 0, 24000000),
+            new NamedRange("25 руб", 0, 40000)
+        };
+        static void Main(string[] args)
+        {
+            try
+            {
+                string[] cities = LoadCities();
+                maxValue = cities.Length;
+
+                int count = GetCitiesCount();
+
+                string[] randomCities = GetRandomCities(cities, count);
+                DisplayRandomCities(randomCities);
+
+                int[,] values = GenerateRandomValues(count);
+                DisplayRandomValues(randomCities, values);
+
+                ExportToExcel(randomCities, values);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("Ошибка: {0}", e.Message);
+            }
+
+            Console.WriteLine("Нажмите ENTER для выхода...");
+            Console.ReadLine();
+        }
+
+        private static void ExportToExcel(string[] cities, int[,] values)
+        {
+            var path = Path.Combine(GetAppFolder(), string.Format("Generated_{0}.xlsx", DateTime.Now.ToString("yyyyMMddHHmmss")));
+            Console.WriteLine("Начался экспорт данных в Excel файл \"{0}\"...", path);
+
+            using (ExcelPackage excel = new ExcelPackage())
+            {
+                excel.Workbook.Worksheets.Add(worksheetName);
+                var worksheet = excel.Workbook.Worksheets[worksheetName];
+
+                var headerRow = new List<object[]>();
+                headerRow.Add(columns.Select(x => x.Name).ToArray());
+                var firstColumnHeaderIndex = 2;
+                var columnsHeaderRange = worksheet.Cells[1, firstColumnHeaderIndex, 1, firstColumnHeaderIndex + columns.Count];
+                columnsHeaderRange.Style.Font.Bold = true;
+                columnsHeaderRange.LoadFromArrays(headerRow);
+
+                var firstRowHeaderIndex = 2;
+                var rowsHeaderRange = worksheet.Cells[firstRowHeaderIndex, 1, firstRowHeaderIndex + cities.Length, 1];
+                rowsHeaderRange.Style.Font.Bold = true;
+
+                var generatedValuesRange = worksheet.Cells[firstRowHeaderIndex, firstColumnHeaderIndex, firstRowHeaderIndex + cities.Length, firstColumnHeaderIndex + columns.Count];
+                generatedValuesRange.Style.Numberformat.Format = "#,##0.00";
+
+                var generatedData = new List<object[]>();
+                for (int i = 0; i < cities.Length; i++)
+                {
+                    var upperBound = values.GetUpperBound(1) + 1;
+                    var rowData = new object[upperBound + 1];
+                    rowData[0] = string.Format("РКЦ {0}", cities[i]);
+                    for (int j = 0; j < upperBound; j++)
+                    {
+                        rowData[j + 1] = values[i, j];
+                    }
+                    generatedData.Add(rowData);
+                }
+                worksheet.Cells[2, 1].LoadFromArrays(generatedData);
+
+                var allRange = worksheet.Cells[1, 1, 1 + cities.Length, 1 + columns.Count];
+                allRange.AutoFitColumns();
+
+
+                FileInfo excelFile = new FileInfo(path);
+                excel.SaveAs(excelFile);
+            }
+
+            Console.WriteLine("Экспорт данных в Excel файл \"{0}\" успешно выполнен.", path);
+        }
+
+        private static void DisplayRandomValues(string[] cities, int[,] values)
+        {
+            
+
+            for (int i = 0; i < cities.Length; i++)
+            {
+                Console.Write("РКЦ {0}", cities[i]);
+                for (int j = 0; j < values.GetUpperBound(1); j++)
+                {
+                    Console.Write("; {0}", values[i, j]);
+                }
+
+                Console.WriteLine();
+            }
+        }
+
+        private static int[,] GenerateRandomValues(int rowCount)
+        {
+            Random random = new Random();
+            var values = new int[rowCount, columns.Count];
+            for (int i = 0; i < rowCount; i++)
+            {
+                int j = 0;
+                foreach (var column in columns)
+                {
+                    values[i, j] = random.Next(column.MinValue, column.MaxValue);
+                    j++;
+                }
+            }
+
+            return values;
+        }
+
+        private static void DisplayRandomCities(string[] randomCities)
+        {
+            Console.WriteLine("Вывод городов отобранных случайным образом:");
+            for (int i = 0; i < randomCities.Length; i++)
+            {
+                Console.WriteLine("{0}", i+1, randomCities[i]);
+            }
+        }
+
+        private static string[] GetRandomCities(string[] cities, int value)
+        {
+            Random random = new Random();
+            string[] randomCities = new string[value];
+            for (int i = 0; i < value; i++)
+            {
+                int randomIndex = random.Next(0, cities.Length - i - 1 );
+                randomCities[i] = cities[randomIndex];
+                cities[randomIndex] = cities[cities.Length - i - 1 ];
+            }
+
+            return randomCities;
+        }
+
+        private static string[] LoadCities()
+        {
+            var path = Path.Combine(GetAppFolder(), "cities.txt");
+            Console.WriteLine("Загрузка городов из файла \"{0}\"...", path);
+            if (!File.Exists(path))
+            { 
+                throw new Exception(string.Format("Не найден файл со списком городов \"{0}\".", path));
+            }
+
+            var cities = File.ReadAllLines(path);
+            Console.WriteLine("Успешно загружено городов: {0}.", cities.Length);
+            return cities;
+        }
+
+        private static string GetAppFolder()
+        {
+            return Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+        }
+
+        private static int GetCitiesCount()
+        {
+            int value;
+            while (true)
+            {
+                Console.WriteLine("Введите количество городов:");
+                string s = Console.ReadLine();
+                if (!int.TryParse(s, out value))
+                {
+                    Console.WriteLine("Ошибка: введено некорректное число.");
+                    continue;
+                }
+
+                if (value < MinValue)
+                {
+                    Console.WriteLine("Ошибка: число должно быть больше или равно {0}.", MinValue);
+                    continue;
+                }
+
+                if (value > maxValue)
+                {
+                    Console.WriteLine("Ошибка: число должно не меньше или равно {0}.", maxValue);
+                    continue;
+                }
+
+                return value;
+            }
+        }
+    }
+}
